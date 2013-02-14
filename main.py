@@ -6,11 +6,15 @@ from dtree import *
 import sys
 
 class Globals:
-    noisyFlag = False
+	noisyFlag = False
 	pruneFlag = False
 	valSetSize = 0
 	dataset = None
 
+# pretty float formatting
+class prettyfloat(float):
+  def __repr__(self):
+    return "%0.2f" % self
 
 ##Classify
 #---------
@@ -64,32 +68,28 @@ def validateInput(args):
 	return [noisyFlag, pruneFlag, valSetSize, maxDepth, boostRounds]
 
 
-# Part 2
+# Part 2a
 def xvalidate(dataset, nfolds):
-  # training size: 80 | validation size: 10 | test size: 10
   datasz = len(dataset.examples)/2
   testsz = datasz/nfolds
-  trainsz = datasz - testsz - testsz
-  rawscore = prunedscore = 0
+  trainsz = datasz - testsz
+  testscore = trainscore = 0
 
   # n-folds
   for i in range(nfolds):
     # partitions
     trainset = DataSet(examples = dataset.examples[i*testsz : i*testsz + trainsz], 
                        values = dataset.values)
-    validationset = DataSet(examples = dataset.examples[i*testsz + trainsz: i*testsz + trainsz + testsz], 
-                            values = dataset.values)
-    testset = DataSet(examples = dataset.examples[i*testsz + trainsz + testsz : i*testsz + datasz], 
+    testset = DataSet(examples = dataset.examples[i*testsz + trainsz : i*testsz + datasz], 
                       values = dataset.values)
 
     # learn, prune trees 
     dtree = learn(trainset)
-    rawscore += scoretree(dtree, testset)
+    testscore += scoretree(dtree, testset)
+    trainscore += scoretree(dtree, trainset)
 
-    pruned = bup_prune(dtree, dtree, validationset, validationset)
-    prunedscore += scoretree(pruned, testset)
-
-  print rawscore / float(nfolds), prunedscore / float(nfolds)
+  print "Training score : ", trainscore / float(nfolds)
+  print "Test score     : ", testscore / float(nfolds)
 
 # tests a decision tree on testset (assume one copy of dataset examples)
 def scoretree(dtree, dataset):
@@ -101,11 +101,16 @@ def scoretree(dtree, dataset):
 
 # returns a dataset with only elements with the specified attribute = val
 def subset(dataset, attr, val): 
-  newdata = copy.deepcopy(dataset)
-  for i in newdata.examples:
-    if i.attrs[attr] != val:
-      newdata.examples.remove(i)
-  return newdata
+  newex = []
+  for i in dataset.examples:
+    if i.attrs[attr] == val:
+      newex.append(i)
+  try:
+    newdataset = DataSet(examples = newex, values = dataset.values)
+    return newdataset
+  except Exception:
+    pass
+  return None
 
 # bottom-up post pruning. NOTE: DESTROYS 'tree' (actually prunes it)
 def bup_prune(tree, testnode, curdata, validset):
@@ -117,12 +122,12 @@ def bup_prune(tree, testnode, curdata, validset):
     for key in testnode.branches:
       subvalset = subset(curdata, testnode.attr, key)
       testnode.branches[key] = bup_prune(tree, testnode.branches[key], 
-                                         curdata, validset)
+                                         subvalset, validset)
 
     # score this tree
     oldscore = scoretree(tree, validset)
 
-    # change testnode into a branch
+    # change testnode into a leaf (but keeps subtrees there)
     testnode.nodetype = DecisionTree.LEAF
     testnode.classification = find_top_class(curdata, testnode.attr)
 
@@ -140,6 +145,39 @@ def find_top_class(dataset, attr):
   for i in dataset.examples:
     attrlist.append(i.attrs[attr])
   return max(set(attrlist), key = attrlist.count)
+
+
+# 2b
+def prune_xvalidate(dataset, nfolds):
+  testscores = []
+  trainscores = []
+
+  # keep test size constant at 10, so trainsz goes from 10 to 89
+  for i in range(1,81):
+    datasz = len(dataset.examples)/2
+    validsz = i
+    testsz = datasz/nfolds
+    trainsz = datasz - validsz - testsz
+    trainscore = testscore = 0
+
+    # partition into TRAIN | TEST | VALID
+    for j in range(nfolds):
+      trainset = DataSet(examples = dataset.examples[j*testsz : j*testsz + trainsz], 
+                         values = dataset.values)
+      testset = DataSet(examples = dataset.examples[j*testsz + trainsz : j*testsz + trainsz + testsz],
+                        values = dataset.values)
+      validset = DataSet(examples = dataset.examples[j*testsz + datasz - validsz : j*testsz + datasz],
+                         values = dataset.values)
+      dtree = learn(trainset)
+      bup_prune(dtree, dtree, trainset, validset)
+      trainscore += scoretree(dtree, trainset)
+      testscore += scoretree(dtree, testset)
+
+    trainscores.append(trainscore / float(nfolds))
+    testscores.append(testscore / float(nfolds))
+
+  print "Training : ", map(prettyfloat, trainscores)
+  print "Testing  : ", map(prettyfloat, testscores)
 
 def main():
     arguments = validateInput(sys.argv)
@@ -164,8 +202,10 @@ def main():
       dataset.use_boosting = True
       dataset.num_rounds = boostRounds
 
-    # yay
+    # yay function
     xvalidate(dataset, 10)
+    prune_xvalidate(dataset, 10)
+    
 
 main()
 
