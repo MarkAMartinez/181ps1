@@ -1,0 +1,189 @@
+# main.py
+# -------
+# YOUR NAME HERE
+
+from dtree import *
+import sys
+
+class Globals:
+    noisyFlag = False
+    pruneFlag = False
+    valSetSize = 0
+    dataset = None
+
+
+##Classify
+#---------
+
+def classify(decisionTree, example):
+    return decisionTree.predict(example)
+
+##Learn
+#-------
+def learn(dataset, depth):
+  #changing the learn function so that it has a max tree depth
+    learner = DecisionTreeLearner()
+    learner.train(dataset,depth)#Sends the cutoff. Need to change the train to account
+ 
+    return learner.dt
+
+# main
+# ----
+# The main program loop
+# You should modify this function to run your experiments
+
+def parseArgs(args):
+  """Parses arguments vector, looking for switches of the form -key {optional value}.
+  For example:
+    parseArgs([ 'main.py', '-n', '-p', 5 ]) = { '-n':True, '-p':5 }"""
+  args_map = {}
+  curkey = None
+  for i in xrange(1, len(args)):
+    if args[i][0] == '-':
+      args_map[args[i]] = True
+      curkey = args[i]
+    else:
+      assert curkey
+      args_map[curkey] = args[i]
+      curkey = None
+  return args_map
+
+def validateInput(args):
+    args_map = parseArgs(args)
+    valSetSize = 0
+    noisyFlag = False
+    pruneFlag = False
+    boostRounds = -1
+    maxDepth = -1
+    if '-n' in args_map:
+      noisyFlag = True
+    if '-p' in args_map:
+      pruneFlag = True
+      valSetSize = int(args_map['-p'])
+    if '-d' in args_map:
+      maxDepth = int(args_map['-d'])
+    if '-b' in args_map:
+      boostRounds = int(args_map['-b'])
+    return [noisyFlag, pruneFlag, valSetSize, maxDepth, boostRounds]
+
+#this is the weighting vote function
+#need to weight the hypotheses. send over both the weight and the hypotheses 
+def weighted_vote(decisionTree_array,example):
+	#How to pass ensemble?
+	pos, neg=0,0
+	#loops through all trees and returns the majority answer
+	#just going to assume only 0 or 1
+	
+	for v in decisionTree_array:
+		pred=v.first.predict(example)
+		if pred==0:
+			neg=neg + v.second #sum the weight up 
+		else:
+			pos=pos+v.second #sum the weight up
+		
+	if pos > neg:
+		return pos
+	else:
+		return neg
+	
+	
+#this is the wrapper for the booster
+def boosting_wrapper(rounds,dataset,max_depth):
+	#the hypothesis list
+	h=[]
+	#error used in this function. Set to -1 first
+	error=[]
+	#the number of times h[r] was wrong
+	tot_wrong=[]
+	for v in range(rounds):
+		error[v]=-1
+	#hypothesis weights
+	alpha=[]
+	
+	N=len(dataset.examples)
+	#new weight
+	vn=[]
+	#total vn per round
+	tot_vn=0.0
+	
+	#the wanted depth of the trees
+	depth=max_depth
+	#loop through the number of rounds
+	for r in range(rounds):
+		#call learn on the weighted examples.Adds the new h
+		h.append(learn(dataset,depth)) 
+		
+		#calculate training error of h. Summation of the weights that h[r] got wrong
+		for voo in dataset.examples:
+			if h[r].predict(voo) != voo.target:
+				error[r]+=voo.weight
+		#check what the training error is and do actions
+		if error[r]==0:
+			return (h[r],1.0)
+		else:
+			alpha[r]=0.5*log((1-error[r])/error[r])
+			#that other loop for the data
+	#gets the new weights for the data
+		for bloop in range(N):
+			if h[r].predict(dataset.examples[bloop])==dataset.examples[bloop].target:
+				vn[bloop]=float(dataset.examples[bloop].weight) * float(exp(-1*alpha[r]))
+				tot_vn+=vn[bloop]
+			else:
+				vn[bloop]=float(dataset.examples[bloop].weight) * float(exp(alpha[r]))
+				tot_vn=vn[bloop]
+		for bleep in range(N):
+			#calculating the new weight of each data point
+			dataset.examples[bleep].weight=vn[bleep]/tot_vn
+								
+	#now just return the tuple of h and alpha	
+	return([(h[x], alpha[x]) for x in range(rounds)])
+	
+	
+def main():
+    arguments = validateInput(sys.argv)
+    noisyFlag, pruneFlag, valSetSize, maxDepth, boostRounds = arguments
+    print noisyFlag, pruneFlag, valSetSize, maxDepth, boostRounds
+
+    # Read in the data file
+    
+    if noisyFlag:
+        f = open("noisy.csv")
+    else:
+        f = open("data.csv")
+
+    data = parse_csv(f.read(), " ")
+    dataset = DataSet(data)
+    
+    # Copy the dataset so we have two copies of it
+    examples = dataset.examples[:]
+ 
+    dataset.examples.extend(examples)
+    dataset.max_depth = maxDepth
+    
+    
+    
+    #only run when boosting
+    if boostRounds != -1:
+      dataset.use_boosting = True
+      dataset.num_rounds = boostRounds
+		
+	
+
+
+    # ====================================
+    # WRITE CODE FOR YOUR EXPERIMENTS HERE 
+      #Start
+    # ====================================
+	#print(weighted_vote(boosting_wrapper(boostRounds,dataset,depth),dataset.examples[blam]))
+
+
+
+    # ====================================
+    # WRITE CODE FOR YOUR EXPERIMENTS HERE
+      #END
+    # ====================================
+	
+main()
+
+
+    
